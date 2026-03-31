@@ -1,0 +1,21 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: eniad_db
+    environment:
+      POSTGRES_USER: eniad_user
+      POSTGRES_PASSWORD: eniad_pass
+      POSTGRES_DB: eniad_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: eniad_redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
