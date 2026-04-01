@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from uuid import UUID
 from enum import Enum
 
@@ -10,7 +10,7 @@ class RoleEnum(str, Enum):
 class UserCreate(BaseModel):
     nom: str
     prenom: str
-    email: EmailStr
+    email: str
     apogee: str | None = None
     mot_de_passe: str
     role: RoleEnum
@@ -18,7 +18,7 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     nom: str | None = None
     prenom: str | None = None
-    email: EmailStr | None = None
+    email: str | None = None
 
 class UserResponse(BaseModel):
     id: UUID
@@ -33,7 +33,7 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     apogee: str
 
 class Token(BaseModel):
