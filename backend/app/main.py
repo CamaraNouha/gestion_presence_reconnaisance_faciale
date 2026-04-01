@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth
+from app.routers import auth,admin
 
 app=FastAPI(
     title="ENIAD Présence API",
@@ -16,6 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth.router)
+app.include_router(admin.router)
 @app.get("/")
 def root():
     return {"message":"ENIAD API is running"}
