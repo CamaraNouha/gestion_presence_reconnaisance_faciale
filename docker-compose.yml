@@ -1,21 +1,59 @@
 services:
+
   db:
     image: pgvector/pgvector:pg16
     container_name: eniad_db
-    environment:
-      POSTGRES_USER: eniad_user
-      POSTGRES_PASSWORD: eniad_pass
-      POSTGRES_DB: eniad_db
+    env_file:
+      - ./backend/.env
     ports:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     container_name: eniad_redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./backend
+    container_name: eniad_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/app/cv/models:/app/app/cv/models
+
+  worker:
+    build: ./backend
+    container_name: eniad_worker
+    command: celery -A app.tasks.celery_tasks.celery_app worker --loglevel=info --pool=solo
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/app/cv/models:/app/app/cv/models
 
 volumes:
   pgdata:

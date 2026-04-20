@@ -1,10 +1,17 @@
-# app/tasks/celery_tasks.py
+# ============================================================
+# CELERY — lit l'URL Redis depuis les variables d'environnement
+# ============================================================
+
 from celery import Celery
+import os
+
+# Lit l'URL Redis depuis les variables d'environnement
+REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 celery_app = Celery(
     "eniad",
-    broker="redis://127.0.0.1:6379/0",
-    backend="redis://127.0.0.1:6379/0"
+    broker=REDIS_URL,
+    backend=REDIS_URL
 )
 
 celery_app.conf.update(
@@ -19,6 +26,7 @@ def mark_absents_auto(session_id: str):
     from app.database import SessionLocal
     from app.models.session import Session, StatutSession
     from app.models.attendance import Attendance, StatutPresence
+    from datetime import datetime
 
     db = SessionLocal()
     try:
@@ -29,18 +37,15 @@ def mark_absents_auto(session_id: str):
         if not session or session.statut == StatutSession.fermee:
             return {"message": "Session déjà fermée"}
 
-        # Marque absents tous ceux qui n'ont pas pointé
         db.query(Attendance).filter(
             Attendance.session_id == session_id,
             Attendance.statut == None
         ).update({"statut": StatutPresence.absent})
 
-        # Ferme la session
         session.statut = StatutSession.fermee
-        from datetime import datetime
         session.fin_at = datetime.utcnow()
-
         db.commit()
+
         return {"message": f"Absents marqués pour session {session_id}"}
     finally:
         db.close()

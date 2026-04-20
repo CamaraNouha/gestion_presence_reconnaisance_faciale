@@ -1,5 +1,5 @@
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool, create_engine
+from sqlalchemy import create_engine, pool
 from alembic import context
 import os
 import sys
@@ -16,12 +16,17 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-def get_url():
-    return "postgresql+psycopg2://eniad_user:eniad_pass@localhost:5433/eniad_db"
+# ── Lit l'URL depuis les variables d'environnement ───────────
+# Dans Docker    : DATABASE_URL=postgresql+psycopg2://...@db:5432/...
+# En local       : DATABASE_URL=postgresql+psycopg2://...@127.0.0.1:5433/...
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg2://eniad_user:eniad_pass@127.0.0.1:5433/eniad_db"
+)
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=get_url(),
+        url=DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -31,8 +36,8 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     connectable = create_engine(
-        get_url(),
-        connect_args={"client_encoding": "utf8"}
+        DATABASE_URL,
+        poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
         context.configure(
