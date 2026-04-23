@@ -99,7 +99,7 @@ async def upload_photo(
     if embedding is None:
         raise HTTPException(
             status_code=400,
-            detail="Aucun visage détecté dans la photo — utilisez une photo claire de face"
+            detail="Aucun visage détecté "
         )
 
     # Sauvegarde ou met à jour l'embedding en base

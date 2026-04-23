@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth,admin,sessions,users,checkin,export
+from app.services.firebase_service import init_firebase
 
 app=FastAPI(
     title="ENIAD Présence API",
@@ -15,6 +16,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialise Firebase au démarrage
+@app.on_event("startup")
+async def startup():
+    init_firebase()
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(sessions.router)

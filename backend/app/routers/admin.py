@@ -104,7 +104,7 @@ async def create_user(
             db.commit()
             raise HTTPException(
                 status_code=400,
-                detail="Aucun visage détecté dans la photo — utilisez une photo nette de face"
+                detail="Aucun visage détecté"
             )
 
         # Sauvegarde l'embedding en base

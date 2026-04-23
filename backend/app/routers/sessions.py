@@ -13,6 +13,7 @@ from app.models.other import UserModule
 from app.schemas.session import SessionCreate, SessionResponse
 from app.schemas.attendance import AttendanceResponse
 from app.core.dependencies import require_professeur, get_current_user
+from app.services.firebase_service import (send_session_notification, send_session_closed_notification)
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
 
@@ -21,7 +22,7 @@ router = APIRouter(prefix="/sessions", tags=["Sessions"])
 # ─────────────────────────────────────────
 
 @router.post("/open", response_model=SessionResponse)
-def open_session(
+async def open_session(
     session_data: SessionCreate,
     db: Session = Depends(get_db),
     prof: User = Depends(require_professeur)
@@ -76,6 +77,14 @@ def open_session(
 
     db.commit()
 
+    await send_session_notification(
+        module_id=str(session.module_id),
+        module_nom=module.nom,
+        prof_nom=f"{prof.prenom} {prof.nom}",
+        session_id=str(session.id),
+        delai_minutes=session_data.delai_minutes
+    )
+
     # Programmer Celery pour marquer absents après délai
     from app.tasks.celery_tasks import mark_absents_auto
     mark_absents_auto.apply_async(
@@ -90,7 +99,7 @@ def open_session(
 # ─────────────────────────────────────────
 
 @router.post("/{session_id}/close", response_model=SessionResponse)
-def close_session(
+async def close_session(
     session_id: UUID,
     db: Session = Depends(get_db),
     prof: User = Depends(require_professeur)
@@ -117,6 +126,10 @@ def close_session(
 
     db.commit()
     db.refresh(session)
+    await send_session_closed_notification(
+        module_id=str(session.module_id),
+        module_nom=session.module.nom
+    )
     return session
 
 # ─────────────────────────────────────────
