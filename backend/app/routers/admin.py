@@ -17,6 +17,11 @@ from app.core.security import hash_password
 from app.core.dependencies import require_admin
 from app.cv.face_engine import face_engine
 
+from app.models.face_embedding import FaceEmbedding
+from app.models.other import UserModule
+from app.models.attendance import Attendance
+from app.models.session import Session as SessionModel
+
 router = APIRouter(prefix="/admin", tags=["Administration"])
 
 # ─────────────────────────────────────────
@@ -25,89 +30,69 @@ router = APIRouter(prefix="/admin", tags=["Administration"])
 
 @router.post("/users", response_model=UserResponse)
 async def create_user(
-    # Données du formulaire
     nom: str = Form(...),
     prenom: str = Form(...),
     email: str = Form(...),
     apogee: str = Form(...),
     mot_de_passe: str = Form(...),
     role: str = Form(...),
-    # Photo optionnelle — obligatoire pour les étudiants
     photo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin)
 ):
     """
     Crée un compte utilisateur avec photo en une seule requête.
-
-    Pour les étudiants : la photo est obligatoire car elle sert
-    à générer l'embedding facial pour la reconnaissance.
-
+    Pour les étudiants : la photo est obligatoire.
     Pour les professeurs et admins : la photo est optionnelle.
     """
 
-    # Vérifie email unique
     if db.query(User).filter(User.email == email).first():
-        raise HTTPException(
-            status_code=400,
-            detail="Email déjà utilisé"
-        )
+        raise HTTPException(status_code=400, detail="Email déjà utilisé")
 
-    # Vérifie apogée unique
     if db.query(User).filter(User.apogee == apogee).first():
-        raise HTTPException(
-            status_code=400,
-            detail="Numéro apogée déjà utilisé"
-        )
+        raise HTTPException(status_code=400, detail="Numéro apogée déjà utilisé")
 
-    # Vérifie que la photo est fournie pour les étudiants
     if role == "etudiant" and photo is None:
         raise HTTPException(
             status_code=400,
             detail="La photo est obligatoire pour les étudiants"
         )
 
-    # Crée le compte utilisateur
+    try:
+        role_enum = RoleEnum(role)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Rôle invalide : {role}. Valeurs acceptées admin, professeur, etudiant"
+        )
+
     user = User(
         nom=nom,
         prenom=prenom,
         email=email,
         apogee=apogee,
         mot_de_passe_hash=hash_password(mot_de_passe),
-        role=RoleEnum(role)
+        role=role_enum
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    # Si une photo est fournie → génère l'embedding
     if photo is not None:
-        # Lit le contenu de la photo
         contents = await photo.read()
-
-        # Convertit en image OpenCV
         img_array = np.frombuffer(contents, dtype=np.uint8)
         image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
         if image is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Image invalide"
-            )
+            raise HTTPException(status_code=400, detail="Image invalide")
 
-        # Extrait l'embedding facial avec YuNet + SFace
         embedding = face_engine.get_embedding(image)
 
         if embedding is None:
-            # Supprime le compte créé si la photo est invalide
             db.delete(user)
             db.commit()
-            raise HTTPException(
-                status_code=400,
-                detail="Aucun visage détecté"
-            )
+            raise HTTPException(status_code=400, detail="Aucun visage détecté")
 
-        # Sauvegarde l'embedding en base
         face_emb = FaceEmbedding(
             user_id=user.id,
             embedding=embedding.tolist()
@@ -176,23 +161,33 @@ def delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
-    db.delete(user)
-    db.commit()
-    return {"message": "Utilisateur supprimé"}
 
-@router.get("/students", response_model=List[UserResponse])
-def get_students(
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_admin)
-):
-    return db.query(User).filter(User.role == RoleEnum.etudiant).all()
+    try:
+        db.query(FaceEmbedding).filter(FaceEmbedding.user_id == user_id).delete()
+        db.query(UserModule).filter(UserModule.user_id == user_id).delete()
+        db.query(Attendance).filter(Attendance.etudiant_id == user_id).delete()
 
-@router.get("/professors", response_model=List[UserResponse])
-def get_professors(
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_admin)
-):
-    return db.query(User).filter(User.role == RoleEnum.professeur).all()
+        if user.role == RoleEnum.professeur:
+            sessions = db.query(SessionModel).filter(
+                SessionModel.professeur_id == user_id
+            ).all()
+            for session in sessions:
+                db.query(Attendance).filter(
+                    Attendance.session_id == session.id
+                ).delete()
+            db.query(SessionModel).filter(
+                SessionModel.professeur_id == user_id
+            ).delete()
+
+        db.delete(user)
+        db.commit()
+
+        return {"message": f"Utilisateur {user.prenom} {user.nom} supprimé"}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur suppression : {str(e)}")
+
 
 # ─────────────────────────────────────────
 # MODULES
@@ -249,12 +244,92 @@ def delete_module(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin)
 ):
+    """
+    Supprime un module avec toutes ses données liées :
+    - Sessions du module
+    - Présences des sessions
+    - Inscriptions des étudiants
+    - Créneaux d'emploi du temps
+    """
     module = db.query(Module).filter(Module.id == module_id).first()
     if not module:
         raise HTTPException(status_code=404, detail="Module introuvable")
-    db.delete(module)
-    db.commit()
-    return {"message": "Module supprimé"}
+
+    try:
+        # 1. Récupère toutes les sessions du module
+        sessions = db.query(SessionModel).filter(
+            SessionModel.module_id == module_id
+        ).all()
+
+        # 2. Supprime les présences de chaque session
+        for session in sessions:
+            db.query(Attendance).filter(
+                Attendance.session_id == session.id
+            ).delete()
+
+        # 3. Supprime les sessions
+        db.query(SessionModel).filter(
+            SessionModel.module_id == module_id
+        ).delete()
+
+        # 4. Supprime les inscriptions étudiants au module
+        db.query(UserModule).filter(
+            UserModule.module_id == module_id
+        ).delete()
+
+        # 5. Supprime les créneaux d'emploi du temps
+        db.query(Schedule).filter(
+            Schedule.module_id == module_id
+        ).delete()
+
+        # 6. Supprime le module
+        db.delete(module)
+        db.commit()
+
+        return {"message": f"Module {module.nom} supprimé avec succès"}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur suppression : {str(e)}"
+        )
+
+
+# ─────────────────────────────────────────
+# ÉTUDIANTS INSCRITS À UN MODULE  ← NOUVEAU
+# ─────────────────────────────────────────
+
+@router.get("/modules/{module_id}/students", response_model=List[UserResponse])
+def get_module_students(
+    module_id: UUID,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
+):
+    """
+    Retourne la liste des étudiants inscrits à un module.
+    Utilisé par l'écran 'Inscriptions modules' du dashboard admin.
+    """
+    module = db.query(Module).filter(Module.id == module_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module introuvable")
+
+    inscriptions = db.query(UserModule).filter(
+        UserModule.module_id == module_id
+    ).all()
+
+    student_ids = [i.user_id for i in inscriptions]
+
+    if not student_ids:
+        return []
+
+    students = db.query(User).filter(
+        User.id.in_(student_ids),
+        User.role == RoleEnum.etudiant
+    ).all()
+
+    return students
+
 
 # ─────────────────────────────────────────
 # INSCRIPTIONS
@@ -306,6 +381,7 @@ def remove_student(
     db.delete(inscription)
     db.commit()
     return {"message": "Étudiant retiré du module"}
+
 
 # ─────────────────────────────────────────
 # EMPLOI DU TEMPS
