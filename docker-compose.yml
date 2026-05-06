@@ -40,6 +40,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/app/cv/models:/app/app/cv/models
+      - ./backend/firebase_credentials.json:/app/firebase_credentials.json:ro
 
   worker:
     build: ./backend
@@ -54,6 +55,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/app/cv/models:/app/app/cv/models
+      - ./backend/firebase_credentials.json:/app/firebase_credentials.json:ro
 
 volumes:
   pgdata:

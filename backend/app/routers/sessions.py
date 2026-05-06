@@ -115,11 +115,11 @@ async def close_session(
     if session.statut == StatutSession.fermee:
         raise HTTPException(status_code=400, detail="Session déjà fermée")
 
-    # Ferme la session
+    # ── Ferme la session ──────────────────────────────────────
     session.statut = StatutSession.fermee
     session.fin_at = datetime.utcnow()
 
-    # Marque absents tous ceux qui n'ont pas pointé
+    # ── Marque absents tous ceux qui n'ont pas pointé ────────
     db.query(Attendance).filter(
         Attendance.session_id == session_id,
         Attendance.statut == None
@@ -127,22 +127,54 @@ async def close_session(
 
     db.commit()
     db.refresh(session)
+
+    # ── Calcule les statistiques ─────────────────────────────
+    all_attendances = db.query(Attendance).filter(
+        Attendance.session_id == session_id
+    ).all()
+
+    total_etudiants = len(all_attendances)
+    total_present = sum(
+        1 for a in all_attendances
+        if a.statut == StatutPresence.present
+    )
+    total_absent = sum(
+        1 for a in all_attendances
+        if a.statut == StatutPresence.absent
+    )
+
+    # ── Notification aux étudiants (session fermée) ──────────
     await send_session_closed_notification(
         module_id=str(session.module_id),
         module_nom=session.module.nom
     )
+
+    # ── Notification au prof avec stats ──────────────────────
+    from app.services.firebase_service import send_prof_stats_notification
+    await send_prof_stats_notification(
+        prof_id=str(prof.id),
+        module_nom=session.module.nom,
+        total_etudiants=total_etudiants,
+        total_present=total_present,
+        total_absent=total_absent,
+    )
+
     return session
 
 # ─────────────────────────────────────────
 # CONSULTER LES PRÉSENCES D'UNE SESSION
 # ─────────────────────────────────────────
 
-@router.get("/{session_id}/attendances", response_model=List[AttendanceResponse])
+@router.get("/{session_id}/attendances")
 def get_session_attendances(
     session_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Retourne les présences d'une session avec les infos
+    de chaque étudiant (nom, prénom, apogée).
+    """
     session = db.query(SessionModel).filter(
         SessionModel.id == session_id
     ).first()
@@ -152,7 +184,32 @@ def get_session_attendances(
     attendances = db.query(Attendance).filter(
         Attendance.session_id == session_id
     ).all()
-    return attendances
+
+    result = []
+    for a in attendances:
+        # Récupère l'étudiant pour chaque présence
+        etudiant = db.query(User).filter(
+            User.id == a.etudiant_id
+        ).first()
+
+        result.append({
+            "id": str(a.id),
+            "session_id": str(a.session_id),
+            "etudiant_id": str(a.etudiant_id),
+            "statut": a.statut.value if a.statut else None,
+            "pointed_at": a.pointed_at.isoformat() if a.pointed_at else None,
+            "latitude": a.latitude,
+            "longitude": a.longitude,
+            "etudiant": {
+                "id": str(etudiant.id) if etudiant else None,
+                "nom": etudiant.nom if etudiant else "",
+                "prenom": etudiant.prenom if etudiant else "",
+                "apogee": etudiant.apogee if etudiant else "",
+                "email": etudiant.email if etudiant else "",
+            } if etudiant else None,
+        })
+
+    return result
 
 # ─────────────────────────────────────────
 # SESSIONS DU PROFESSEUR

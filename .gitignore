@@ -221,3 +221,6 @@ backend/photo2_base64.txt
 backend/photo3_base64.txt
 
 backend/photo4_base64.txt
+
+backend/firebase-credentials.json
+google-services.json

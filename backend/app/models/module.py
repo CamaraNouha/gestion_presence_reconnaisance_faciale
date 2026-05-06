@@ -5,6 +5,7 @@ from app.database import Base
 import uuid
 from datetime import datetime
 
+
 class Module(Base):
     __tablename__ = "modules"
 
@@ -20,4 +21,3 @@ class Module(Base):
     professeur = relationship("User", back_populates="modules_enseignes")
     inscriptions = relationship("UserModule", back_populates="module")
     sessions = relationship("Session", back_populates="module")
-    schedules = relationship("Schedule", back_populates="module")

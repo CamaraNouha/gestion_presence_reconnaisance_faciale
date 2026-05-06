@@ -8,11 +8,10 @@ import cv2
 from app.database import get_db
 from app.models.user import User, RoleEnum
 from app.models.module import Module
-from app.models.other import UserModule, Schedule
+from app.models.other import UserModule
 from app.models.face_embedding import FaceEmbedding
 from app.schemas.user import UserResponse
 from app.schemas.module import ModuleCreate, ModuleUpdate, ModuleResponse
-from app.schemas.schedule import ScheduleCreate, ScheduleResponse
 from app.core.security import hash_password
 from app.core.dependencies import require_admin
 from app.cv.face_engine import face_engine
@@ -158,20 +157,74 @@ def delete_user(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin)
 ):
+    """
+    Supprime un utilisateur avec toutes ses données liées.
+    
+    Cas selon le rôle :
+    - Étudiant : embeddings + inscriptions + présences
+    - Professeur : tous ses modules (avec sessions/présences/inscriptions)
+    - Admin : profil seulement
+    """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+        raise HTTPException(
+            status_code=404,
+            detail="Utilisateur introuvable"
+        )
 
     try:
-        db.query(FaceEmbedding).filter(FaceEmbedding.user_id == user_id).delete()
-        db.query(UserModule).filter(UserModule.user_id == user_id).delete()
-        db.query(Attendance).filter(Attendance.etudiant_id == user_id).delete()
+        # 1. Supprime les embeddings faciaux (étudiant)
+        db.query(FaceEmbedding).filter(
+            FaceEmbedding.user_id == user_id
+        ).delete()
 
+        # 2. Supprime les inscriptions aux modules (étudiant)
+        db.query(UserModule).filter(
+            UserModule.user_id == user_id
+        ).delete()
+
+        # 3. Supprime les présences de l'utilisateur (étudiant)
+        db.query(Attendance).filter(
+            Attendance.etudiant_id == user_id
+        ).delete()
+
+        # 4. Si c'est un PROF → supprime tous ses modules
         if user.role == RoleEnum.professeur:
-            sessions = db.query(SessionModel).filter(
+            # Récupère tous les modules du prof
+            prof_modules = db.query(Module).filter(
+                Module.professeur_id == user_id
+            ).all()
+
+            for module in prof_modules:
+                # 4a. Récupère les sessions du module
+                module_sessions = db.query(SessionModel).filter(
+                    SessionModel.module_id == module.id
+                ).all()
+
+                # 4b. Supprime les présences de chaque session
+                for session in module_sessions:
+                    db.query(Attendance).filter(
+                        Attendance.session_id == session.id
+                    ).delete()
+
+                # 4c. Supprime les sessions du module
+                db.query(SessionModel).filter(
+                    SessionModel.module_id == module.id
+                ).delete()
+
+                # 4d. Supprime les inscriptions étudiants au module
+                db.query(UserModule).filter(
+                    UserModule.module_id == module.id
+                ).delete()
+
+                # 4f. Supprime le module
+                db.delete(module)
+
+            # 5. Supprime aussi les sessions où le prof est listé directement
+            prof_sessions = db.query(SessionModel).filter(
                 SessionModel.professeur_id == user_id
             ).all()
-            for session in sessions:
+            for session in prof_sessions:
                 db.query(Attendance).filter(
                     Attendance.session_id == session.id
                 ).delete()
@@ -179,15 +232,20 @@ def delete_user(
                 SessionModel.professeur_id == user_id
             ).delete()
 
+        # 6. Supprime l'utilisateur
         db.delete(user)
         db.commit()
 
-        return {"message": f"Utilisateur {user.prenom} {user.nom} supprimé"}
+        return {
+            "message": f"Utilisateur {user.prenom} {user.nom} supprimé"
+        }
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Erreur suppression : {str(e)}")
-
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur suppression : {str(e)}"
+        )
 
 # ─────────────────────────────────────────
 # MODULES
@@ -277,10 +335,7 @@ def delete_module(
             UserModule.module_id == module_id
         ).delete()
 
-        # 5. Supprime les créneaux d'emploi du temps
-        db.query(Schedule).filter(
-            Schedule.module_id == module_id
-        ).delete()
+        
 
         # 6. Supprime le module
         db.delete(module)
@@ -382,39 +437,3 @@ def remove_student(
     db.commit()
     return {"message": "Étudiant retiré du module"}
 
-
-# ─────────────────────────────────────────
-# EMPLOI DU TEMPS
-# ─────────────────────────────────────────
-
-@router.post("/schedules", response_model=ScheduleResponse)
-def create_schedule(
-    schedule_data: ScheduleCreate,
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_admin)
-):
-    schedule = Schedule(**schedule_data.model_dump())
-    db.add(schedule)
-    db.commit()
-    db.refresh(schedule)
-    return schedule
-
-@router.get("/schedules", response_model=List[ScheduleResponse])
-def get_schedules(
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_admin)
-):
-    return db.query(Schedule).all()
-
-@router.delete("/schedules/{schedule_id}")
-def delete_schedule(
-    schedule_id: UUID,
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_admin)
-):
-    schedule = db.query(Schedule).filter(Schedule.id == schedule_id).first()
-    if not schedule:
-        raise HTTPException(status_code=404, detail="Créneau introuvable")
-    db.delete(schedule)
-    db.commit()
-    return {"message": "Créneau supprimé"}
