@@ -18,6 +18,7 @@ import '../etudiant/etudiant_dashboard.dart';
 import '../professeur/professeur_dashboard.dart';
 import '../../core/services/api_service.dart';
 import '../../core/services/fcm_service.dart';
+import '../etudiant/onboarding/add_photo_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -57,13 +58,21 @@ class _SplashScreenState extends State<SplashScreen> {
       if (role == 'admin') {
         _goToAdmin();
       } else if (role == 'etudiant') {
-        _goToEtudiant();
+        // Vérifie si l'étudiant a une photo
+        final hasPhoto = await ApiService.hasPhoto();
+        if (!mounted) return;
+        if (hasPhoto) {
+          _goToEtudiant();
+        } else {
+          _goToAddPhoto();
+        }
       } else if (role == 'professeur') {
         _goToProf();
       } else {
         _goToLogin();
       }
-    } else {
+    }
+    else{
       _goToLogin();
     }
   }
@@ -111,6 +120,14 @@ class _SplashScreenState extends State<SplashScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => const ProfesseurDashboard(),
+      ),
+    );
+  }
+
+  void _goToAddPhoto() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => const AddPhotoScreen(),
       ),
     );
   }

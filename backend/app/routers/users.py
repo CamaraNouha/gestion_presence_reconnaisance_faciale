@@ -175,6 +175,76 @@ def get_my_modules(
     return result
 
 
+
+#----------------------------------------------------
+# Vérifie si l'utilisateur a une photo
+#----------------------------------------------------
+
+@router.get("/me/has-photo")
+def has_photo(
+    db: Session = Depends(get_db),
+    current_user:User = Depends(get_current_user)
+):
+    """
+    Vérifie si l'utilisateur connecté a un embedding facial.
+    Utilisé pour forcer l'ajout de photo à la premiere connexion étudiant.
+    """
+    embedding = db.query(FaceEmbedding).filter(
+        FaceEmbedding.user_id == current_user.id
+    ).first()
+    return{
+        "has_photo": embedding is not None,
+        "user_id": str(current_user.id),
+        "role":current_user.role.value,
+    }
+
+
+@router.post("/me/upload-photo")
+async def upload_my_photo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permet à l'utilisateur connecté d'uploader sa propre photo.
+    Utilisé surtout par les étudiants à leur premiere connexion
+    si l'admin ne leur a pas mis de photo lors de la création.
+    """
+    # Lit le contenue
+    contents = await file.read()
+    img_array = np.frombuffer(contents, dtype=np.uint8)
+    image= cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+    if image is None:
+        raise HTTPException(status_code=400, detail="Image invalide")
+    #Génére l'embedding
+    embedding = face_engine.get_embedding(image)
+    if embedding is None:
+        raise HTTPException(
+            status_code=400,
+            detail= "Aucun visage détecté dans la photo"
+        )
+    
+    #Sauvegarde ou met à jour 
+    existing = db.query(FaceEmbedding).filter(
+        FaceEmbedding.user_id == current_user.id
+    ).first()
+
+    if existing:
+        existing.embedding = embedding.tolist()
+    else:
+        new_embedding= FaceEmbedding(
+            user_id = current_user.id,
+            embedding=embedding.tolist()
+        )
+        db.add(new_embedding)
+    db.commit()
+    return {
+        "succes":True,
+        "message":"Photo ajouté avec succès",
+        "embedding_dimensions":len(embedding)
+    }
+
 # ─────────────────────────────────────────
 # UPLOAD PHOTO
 # ─────────────────────────────────────────

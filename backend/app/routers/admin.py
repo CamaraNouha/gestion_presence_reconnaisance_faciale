@@ -4,6 +4,9 @@ from typing import List, Optional
 from uuid import UUID
 import numpy as np
 import cv2
+import io
+import csv
+from openpyxl import load_workbook
 
 from app.database import get_db
 from app.models.user import User, RoleEnum
@@ -24,7 +27,7 @@ from app.models.session import Session as SessionModel
 router = APIRouter(prefix="/admin", tags=["Administration"])
 
 # ─────────────────────────────────────────
-# CRÉER UN UTILISATEUR AVEC PHOTO
+# CRÉER UN UTILISATEUR
 # ─────────────────────────────────────────
 
 @router.post("/users", response_model=UserResponse)
@@ -40,8 +43,8 @@ async def create_user(
     admin: User = Depends(require_admin)
 ):
     """
-    Crée un compte utilisateur avec photo en une seule requête.
-    Pour les étudiants : la photo est obligatoire.
+    Crée un compte utilisateur.
+    Pour les étudiants : la photo est ajouté par admin ou eux meme pour la 1ere connexion.
     Pour les professeurs et admins : la photo est optionnelle.
     """
 
@@ -51,11 +54,6 @@ async def create_user(
     if db.query(User).filter(User.apogee == apogee).first():
         raise HTTPException(status_code=400, detail="Numéro apogée déjà utilisé")
 
-    if role == "etudiant" and photo is None:
-        raise HTTPException(
-            status_code=400,
-            detail="La photo est obligatoire pour les étudiants"
-        )
 
     try:
         role_enum = RoleEnum(role)
@@ -101,6 +99,151 @@ async def create_user(
 
     return user
 
+# ─────────────────────────────────────────
+# IMPORT EN BLOC D'ÉTUDIANTS (CSV ou Excel)
+# ─────────────────────────────────────────
+
+@router.post("/users/bulk-import")
+async def bulk_import_students(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
+):
+    """
+    Importe une liste d'étudiants depuis un fichier CSV ou Excel.
+    
+    Format attendu (colonnes) :
+    - nom, prenom, email, apogee, mot_de_passe (optionnel)
+    
+    Les étudiants sont créés SANS photo.
+    Ils devront ajouter leur photo à leur première connexion.
+    """
+    
+    # Lit le contenu
+    contents = await file.read()
+    filename = file.filename.lower()
+    
+    rows = []
+    
+    try:
+        # Détection du format
+        if filename.endswith('.csv'):
+            # Parse CSV
+            text = contents.decode('utf-8-sig')  # Gère le BOM
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+        
+        elif filename.endswith('.xlsx') or filename.endswith('.xls'):
+            # Parse Excel
+            wb = load_workbook(io.BytesIO(contents), read_only=True)
+            ws = wb.active
+            
+            # Récupère les en-têtes (1ère ligne)
+            headers = []
+            for cell in ws[1]:
+                headers.append(str(cell.value).strip().lower() if cell.value else '')
+            
+            # Récupère les données
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if all(v is None for v in row):
+                    continue  # Ligne vide
+                
+                row_dict = {}
+                for i, value in enumerate(row):
+                    if i < len(headers):
+                        row_dict[headers[i]] = str(value).strip() if value else ''
+                rows.append(row_dict)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Format non supporté. Utilisez CSV ou Excel (.xlsx)"
+            )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Erreur lecture fichier : {str(e)}"
+        )
+    
+    if not rows:
+        raise HTTPException(
+            status_code=400,
+            detail="Le fichier est vide ou mal formaté"
+        )
+    
+    # Compteurs
+    created = 0
+    errors = []
+    
+    # Traite chaque ligne
+    for i, row in enumerate(rows, start=2):  # start=2 car ligne 1 = headers
+        try:
+            # Récupère les champs (insensible à la casse)
+            row_lower = {k.lower().strip(): v for k, v in row.items() if k}
+            
+            nom = row_lower.get('nom', '').strip()
+            prenom = row_lower.get('prenom', '').strip()
+            email = row_lower.get('email', '').strip()
+            apogee = row_lower.get('apogee', '').strip()
+            mot_de_passe = row_lower.get('mot_de_passe', '').strip()
+            
+            # Validation des champs requis
+            if not nom or not prenom or not email or not apogee:
+                errors.append({
+                    "ligne": i,
+                    "erreur": "Champs manquants (nom, prenom, email, apogee requis)"
+                })
+                continue
+            
+            # Si pas de mot de passe → utilise l'apogée
+            if not mot_de_passe:
+                mot_de_passe = apogee
+            
+            # Vérifie unicité email
+            if db.query(User).filter(User.email == email).first():
+                errors.append({
+                    "ligne": i,
+                    "erreur": f"Email déjà utilisé : {email}"
+                })
+                continue
+            
+            # Vérifie unicité apogée
+            if db.query(User).filter(User.apogee == apogee).first():
+                errors.append({
+                    "ligne": i,
+                    "erreur": f"Apogée déjà utilisé : {apogee}"
+                })
+                continue
+            
+            # Crée l'étudiant SANS photo
+            user = User(
+                nom=nom,
+                prenom=prenom,
+                email=email,
+                apogee=apogee,
+                mot_de_passe_hash=hash_password(mot_de_passe),
+                role=RoleEnum.etudiant
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            
+            created += 1
+        
+        except Exception as e:
+            db.rollback()
+            errors.append({
+                "ligne": i,
+                "erreur": str(e)
+            })
+    
+    return {
+        "success": True,
+        "total": len(rows),
+        "created": created,
+        "errors": errors,
+        "message": f"{created} étudiant(s) créé(s) sur {len(rows)} ligne(s)"
+    }
 
 # ─────────────────────────────────────────
 # LISTE DES UTILISATEURS
@@ -436,4 +579,6 @@ def remove_student(
     db.delete(inscription)
     db.commit()
     return {"message": "Étudiant retiré du module"}
+
+
 

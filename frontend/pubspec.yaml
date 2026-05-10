@@ -29,6 +29,9 @@ dependencies:
   # Sélection d'image (galerie)
   image_picker: ^1.0.7
 
+  # Sélection de fichiers (CSV/Excel pour import en bloc)
+  file_picker: ^8.0.0+1
+
   # Téléchargement et ouverture de fichiers
   path_provider: ^2.1.2
   open_filex: ^4.3.4

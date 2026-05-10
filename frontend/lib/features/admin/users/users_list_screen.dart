@@ -11,6 +11,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/message_box.dart';
 import '../../../core/widgets/loading_screen.dart';
 import 'create_user_screen.dart';
+import 'bulk_import_screen.dart';
 
 class UsersListScreen extends StatefulWidget {
   final String? initialFilter;
@@ -148,6 +149,14 @@ class _UsersListScreenState extends State<UsersListScreen> {
     }
   }
 
+  Future<void> _goToBulkImport() async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const BulkImportScreen()),
+    );
+    if (result == true) _loadUsers();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -157,14 +166,34 @@ class _UsersListScreenState extends State<UsersListScreen> {
         title: const Text('Utilisateurs'),
         elevation: 0,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _goToCreateUser,
-        backgroundColor: AppColors.admin,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          'Nouveau',
-          style: TextStyle(color: Colors.white),
-        ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // FAB Import en bloc
+          FloatingActionButton.extended(
+            heroTag: 'import',
+            onPressed: _goToBulkImport,
+            backgroundColor: AppColors.info,
+            icon: const Icon(Icons.upload_file, color: Colors.white),
+            label: const Text(
+              'Importer',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // FAB Création unitaire
+          FloatingActionButton.extended(
+            heroTag: 'create',
+            onPressed: _goToCreateUser,
+            backgroundColor: AppColors.admin,
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text(
+              'Nouveau',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
       ),
       body: _loading
           ? const LoadingInline()

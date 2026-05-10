@@ -199,6 +199,62 @@ class ApiService {
     }
   }
 
+  // ============================================================
+  // IMPORT EN BLOC (Admin)
+  // ============================================================
+
+  static Future<Map<String, dynamic>> bulkImportStudents(
+    String filePath,
+  ) async {
+    try {
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(filePath),
+      });
+      final response = await _dio.post(
+        '/admin/users/bulk-import',
+        data: formData,
+      );
+      return Map<String, dynamic>.from(response.data);
+    } on DioException catch (e) {
+      throw Exception(_errorMessage(e));
+    }
+  }
+
+  // ============================================================
+  // VÉRIFIE SI L'UTILISATEUR A UNE PHOTO
+  // ============================================================
+
+  static Future<bool> hasPhoto() async {
+    try {
+      final response = await _dio.get('/users/me/has-photo');
+      return response.data['has_photo'] == true;
+    } on DioException catch (e) {
+      print('hasPhoto error: ${_errorMessage(e)}');
+      return true; // En cas d'erreur, on suppose qu'il a (pour ne pas bloquer)
+    }
+  }
+
+  // ============================================================
+  // L'UTILISATEUR UPLOAD SA PROPRE PHOTO
+  // ============================================================
+
+  static Future<Map<String, dynamic>> uploadMyPhoto(
+    String filePath,
+  ) async {
+    try {
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(filePath),
+      });
+      final response = await _dio.post(
+        '/users/me/upload-photo',
+        data: formData,
+      );
+      return Map<String, dynamic>.from(response.data);
+    } on DioException catch (e) {
+      throw Exception(_errorMessage(e));
+    }
+  }
+
   static Future<void> deleteUser(String userId) async {
     try {
       await _dio.delete('/admin/users/$userId');

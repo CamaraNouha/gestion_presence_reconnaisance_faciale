@@ -20,6 +20,7 @@ import '../admin/admin_dashboard.dart';
 import '../etudiant/etudiant_dashboard.dart';
 import '../professeur/professeur_dashboard.dart';
 import '../../core/services/fcm_service.dart';
+import '../etudiant/onboarding/add_photo_screen.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -97,15 +98,25 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ── Redirection selon le rôle ───────────────────────────────
-  void _redirectByRole(String role) {
+  Future<void> _redirectByRole(String role) async {
     if (role == 'admin') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const AdminDashboard()),
       );
     } else if (role == 'etudiant') {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const EtudiantDashboard()),
-      );
+      // Vérifie si l'étudiant a une photo
+      final hasPhoto = await ApiService.hasPhoto();
+      if (!mounted) return;
+
+      if (hasPhoto) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const EtudiantDashboard()),
+        );
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const AddPhotoScreen()),
+        );
+      }
     } else if (role == 'professeur') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const ProfesseurDashboard()),
