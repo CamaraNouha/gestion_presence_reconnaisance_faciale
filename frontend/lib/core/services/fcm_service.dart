@@ -22,7 +22,7 @@ class FCMService {
   static Future<void> init() async {
     try {
       await Firebase.initializeApp();
-      print('✅ Firebase Core initialisé');
+      print('Firebase Core initialisé');
 
       await _requestPermissions();
       await _setupLocalNotifications();
@@ -30,10 +30,10 @@ class FCMService {
 
       final token = await _fcm.getToken();
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('📱 FCM Token: $token');
+      print(' FCM Token: $token');
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (e) {
-      print('❌ Erreur init FCM: $e');
+      print('Erreur init FCM: $e');
     }
   }
 
@@ -53,9 +53,9 @@ class FCMService {
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      print('✅ Permission notifications accordée');
+      print(' Permission notifications accordée');
     } else {
-      print('⚠️ Permission notifications refusée');
+      print(' Permission notifications refusée');
     }
   }
 
@@ -152,9 +152,9 @@ class FCMService {
       final topic = 'module_${moduleId.replaceAll('-', '_')}';
       try {
         await _fcm.subscribeToTopic(topic);
-        print('✅ Abonné au topic: $topic');
+        print(' Abonné au topic: $topic');
       } catch (e) {
-        print('❌ Erreur abonnement $topic: $e');
+        print(' Erreur abonnement $topic: $e');
       }
     }
   }
@@ -163,9 +163,9 @@ class FCMService {
     final topic = 'module_${moduleId.replaceAll('-', '_')}';
     try {
       await _fcm.unsubscribeFromTopic(topic);
-      print('✅ Désabonné du topic: $topic');
+      print(' Désabonné du topic: $topic');
     } catch (e) {
-      print('❌ Erreur désabonnement $topic: $e');
+      print(' Erreur désabonnement $topic: $e');
     }
   }
 
@@ -173,18 +173,18 @@ class FCMService {
     final topic = 'prof_${profId.replaceAll('-', '_')}';
     try {
       await _fcm.subscribeToTopic(topic);
-      print('✅ Abonné au topic prof: $topic');
+      print(' Abonné au topic prof: $topic');
     } catch (e) {
-      print('❌ Erreur abonnement prof: $e');
+      print(' Erreur abonnement prof: $e');
     }
   }
 
   static Future<void> unsubscribeAll() async {
     try {
       await _fcm.deleteToken();
-      print('✅ Tous les topics nettoyés');
+      print(' Tous les topics nettoyés');
     } catch (e) {
-      print('❌ Erreur cleanup: $e');
+      print(' Erreur cleanup: $e');
     }
   }
 }

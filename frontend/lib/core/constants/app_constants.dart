@@ -13,8 +13,8 @@ class AppConstants {
   static const String appSlogan = 'Système de gestion de présence';
 
   // ── API Backend ───────────────────────────────────────────
-  // ⚠️ Change cette IP par celle de ta machine locale
-  static const String apiBaseUrl = 'http://192.168.11.112:8000';
+  //Change cette IP par celle de ta machine locale
+  static const String apiBaseUrl = 'http://192.168.11.129:8000';
 
   // ── Timeouts ──────────────────────────────────────────────
   static const int connectionTimeout = 15; // secondes

@@ -5,9 +5,6 @@
 // Il ajoute automatiquement le token JWT dans les headers.
 // ============================================================
 
-// ============================================================
-// API SERVICE — Communication avec le backend FastAPI
-// ============================================================
 
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -45,7 +42,7 @@ class ApiService {
       },
       onError: (error, handler) {
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        print('❌ API Error');
+        print('   API Error');
         print('   Path: ${error.requestOptions.path}');
         print('   Status: ${error.response?.statusCode}');
         print('   Message: ${error.response?.data}');

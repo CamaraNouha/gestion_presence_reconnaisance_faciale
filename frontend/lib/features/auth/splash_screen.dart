@@ -1,7 +1,7 @@
 // ============================================================
 // SPLASH SCREEN — Écran de démarrage ENIAD
 // ============================================================
-// Affiche le logo de l'école pendant 2 secondes
+// Affiche le logo  pendant 2 secondes
 // Vérifie si l'utilisateur est connecté :
 //  - Connecté → Dashboard de son rôle
 //  - Pas connecté → Login

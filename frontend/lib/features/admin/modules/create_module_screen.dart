@@ -23,7 +23,7 @@ class _CreateModuleScreenState extends State<CreateModuleScreen> {
   final _codeCtrl = TextEditingController();
 
   String _semestre = 'S1';
-  String _filiere = 'IAD';
+  String _filiere = 'Intelligence Artificielle(IA)';
   String? _profId;
 
   bool _loading = false;
@@ -31,11 +31,15 @@ class _CreateModuleScreenState extends State<CreateModuleScreen> {
   List<dynamic> _profs = [];
 
   final List<String> _semestres = [
-    'S1', 'S2', 'S3', 'S4', 'S5', 'S6'
+    'S1', 'S2', 'S3', 'S4', 'S5', 'S6','S7','S8','S9'
   ];
 
   final List<String> _filieres = [
-    'IAD', 'Informatique', 'Mathématiques', 'Autre'
+    'Intelligence Artificielle(IA)', 
+    'Génie Informatique(GINF)', 
+    'Robotique et Objets connetés(ROC)', 
+    'Ingénierie réseaux et sécurité Informatique(IRSI)',
+    'Etudes Préparatoires en Sciences de L\'ingénieur(EPSI)'
   ];
 
   @override
