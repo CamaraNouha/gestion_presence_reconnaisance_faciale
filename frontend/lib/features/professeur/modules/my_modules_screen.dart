@@ -4,7 +4,6 @@
 
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/widgets/module_tile.dart';
 import '../../../core/widgets/empty_state.dart';

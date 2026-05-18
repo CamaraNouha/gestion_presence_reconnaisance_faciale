@@ -9,7 +9,7 @@ import '../../core/services/api_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/widgets/stat_box.dart';
 import '../../core/widgets/loading_screen.dart';
-import '../../core/widgets/empty_state.dart';
+
 import '../auth/login_screen.dart';
 import 'sessions/open_session_screen.dart';
 import 'sessions/active_session_screen.dart';
