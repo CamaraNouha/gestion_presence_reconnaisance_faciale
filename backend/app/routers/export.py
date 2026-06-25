@@ -179,7 +179,7 @@ def export_excel(
 
     # ── LIGNE 1 : Titre principal ─────────────────────────────
     ws.merge_cells("A1:F1")
-    ws["A1"] = "ENIADE — Liste de présence"
+    ws["A1"] = "ENIAD — Liste de présence"
     ws["A1"].font = title_font
     ws["A1"].fill = title_fill
     ws["A1"].alignment = title_align
