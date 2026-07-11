@@ -14,7 +14,7 @@ class AppConstants {
 
   // ── API Backend ───────────────────────────────────────────
  
-  static const String apiBaseUrl = 'http://192.168.11.112:8000';
+  static const String apiBaseUrl = 'http://192.168.11.131:8000';
 
   // ── Timeouts ──────────────────────────────────────────────
   static const int connectionTimeout = 15; // secondes
@@ -23,9 +23,6 @@ class AppConstants {
   // ── Reconnaissance faciale ────────────────────────────────
   static const double faceMatchThreshold = 0.363;
   static const int maxPhotoSize = 800; // pixels
-
-  // ── Géolocalisation ───────────────────────────────────────
-  static const double maxDistanceMeters = 200.0;
 
   // ── Pointage ──────────────────────────────────────────────
   static const int defaultSessionDelay = 15; // minutes

@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import '../constants/app_constants.dart';
 import 'storage_service.dart';
+import 'navigation_service.dart';
 
 class ApiService {
   ApiService._();
@@ -30,6 +31,9 @@ class ApiService {
   // INITIALISATION
   // ============================================================
 
+  // Empêche plusieurs rafraîchissements simultanés (un seul à la fois)
+  static Future<bool>? _refreshFuture;
+
   static void init() {
     _dio.interceptors.clear();
     _dio.interceptors.add(InterceptorsWrapper(
@@ -40,7 +44,36 @@ class ApiService {
         }
         return handler.next(options);
       },
-      onError: (error, handler) {
+      onError: (error, handler) async {
+        final status = error.response?.statusCode;
+        final path = error.requestOptions.path;
+        final isAuthCall =
+            path.contains('/auth/login') || path.contains('/auth/refresh');
+        final alreadyRetried =
+            error.requestOptions.extra['retried'] == true;
+
+        // ── Access token expiré → tente un refresh puis rejoue ──
+        if (status == 401 && !isAuthCall && !alreadyRetried) {
+          // Un seul refresh à la fois : les requêtes concurrentes
+          // attendent le même résultat.
+          _refreshFuture ??= _refreshTokens();
+          final refreshed = await _refreshFuture!;
+          _refreshFuture = null;
+
+          if (refreshed) {
+            try {
+              final newToken = await StorageService.getToken();
+              final opts = error.requestOptions;
+              opts.headers['Authorization'] = 'Bearer $newToken';
+              opts.extra['retried'] = true;
+              final retryResponse = await _dio.fetch(opts);
+              return handler.resolve(retryResponse);
+            } catch (_) {
+              // Le rejeu a échoué → on laisse l'erreur suivre son cours
+            }
+          }
+        }
+
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         print('   API Error');
         print('   Path: ${error.requestOptions.path}');
@@ -50,6 +83,78 @@ class ApiService {
         return handler.next(error);
       },
     ));
+  }
+
+  // ============================================================
+  // REFRESH TOKEN
+  // ============================================================
+
+  /// Échange le refresh token stocké contre un nouveau couple de
+  /// tokens. Utilise un Dio « nu » (sans intercepteur) pour éviter
+  /// toute récursion. Retourne true si le rafraîchissement a réussi.
+  static Future<bool> _refreshTokens() async {
+    final refresh = await StorageService.getRefreshToken();
+    if (refresh == null || refresh.isEmpty) {
+      // Aucun refresh token → session terminée
+      await _handleSessionExpired();
+      return false;
+    }
+
+    try {
+      final bareDio = Dio(BaseOptions(baseUrl: AppConstants.apiBaseUrl));
+      final response = await bareDio.post(
+        '/auth/refresh',
+        data: {'refresh_token': refresh},
+      );
+      final newAccess = response.data['access_token'] as String;
+      final newRefresh = response.data['refresh_token'] as String;
+      await StorageService.updateTokens(
+        token: newAccess,
+        refreshToken: newRefresh,
+      );
+      return true;
+    } on DioException catch (e) {
+      // 401 → refresh réellement invalide/expiré/révoqué → déconnexion
+      if (e.response?.statusCode == 401) {
+        await _handleSessionExpired();
+      } else {
+        // Erreur réseau transitoire → on NE déconnecte PAS
+        print('Refresh réseau échoué: ${e.message}');
+      }
+      return false;
+    }
+  }
+
+  // Évite de traiter l'expiration plusieurs fois en parallèle
+  static bool _sessionExpiredHandling = false;
+
+  /// Session définitivement expirée : on nettoie et on renvoie
+  /// l'utilisateur vers l'écran de login (redirection live).
+  static Future<void> _handleSessionExpired() async {
+    if (_sessionExpiredHandling) return;
+    _sessionExpiredHandling = true;
+    try {
+      await StorageService.clearAll();
+    } catch (_) {
+      // ignore
+    }
+    NavigationService.goToLogin();
+    _sessionExpiredHandling = false;
+  }
+
+  // ============================================================
+  // LOGOUT — révoque le refresh token côté serveur
+  // ============================================================
+
+  static Future<void> logout() async {
+    try {
+      final refresh = await StorageService.getRefreshToken();
+      if (refresh != null && refresh.isNotEmpty) {
+        await _dio.post('/auth/logout', data: {'refresh_token': refresh});
+      }
+    } catch (e) {
+      print('logout error: $e');
+    }
   }
 
   static String _errorMessage(DioException e) {

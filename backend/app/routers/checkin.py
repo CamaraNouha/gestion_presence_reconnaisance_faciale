@@ -14,7 +14,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-import numpy as np
 from uuid import UUID
 from datetime import datetime
 import math
@@ -130,12 +129,16 @@ def checkin(
         }
 
     # ── Étape 4 : Vérifie la géolocalisation ─────────────────
-    # Seulement si le prof a défini sa position ET
-    # que l'étudiant envoie sa position
-    if (session.latitude is not None and
-        session.longitude is not None and
-        request.latitude is not None and
-        request.longitude is not None):
+    # Si la session est géolocalisée (le prof a défini une position),
+    # l'étudiant DOIT fournir une position valide ET être dans le rayon.
+    # Envoyer des coordonnées nulles ne permet plus de contourner le
+    # contrôle : la présence est refusée.
+    if session.latitude is not None and session.longitude is not None:
+        if request.latitude is None or request.longitude is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Position GPS requise pour pointer dans cette session"
+            )
 
         # Calcule la distance entre étudiant et prof
         distance = calculer_distance_metres(
@@ -162,39 +165,40 @@ def checkin(
             detail="Aucun visage détecté — placez votre visage face à la caméra"
         )
 
-    # ── Étape 6 : Récupère les embeddings du module ───────────
+    # ── Étape 6 : Récupère les étudiants inscrits au module ───
     inscriptions = db.query(UserModule).filter(
         UserModule.module_id == session.module_id
     ).all()
     student_ids = [i.user_id for i in inscriptions]
 
-    stored_embeddings = db.query(FaceEmbedding).filter(
-        FaceEmbedding.user_id.in_(student_ids)
-    ).all()
+    # ── Étape 7 : Plus proche voisin via pgvector ─────────────
+    # Le calcul de similarité cosinus est délégué à PostgreSQL
+    # (opérateur <=>) au lieu de charger tous les embeddings
+    # et de boucler en Python. Postgres renvoie directement le
+    # visage le plus proche parmi les étudiants du module.
+    query_vector = embedding_from_camera.tolist()
+    distance_col = FaceEmbedding.embedding.cosine_distance(query_vector)
 
-    if not stored_embeddings:
+    result = (
+        db.query(FaceEmbedding.user_id, distance_col.label("distance"))
+        .filter(FaceEmbedding.user_id.in_(student_ids))
+        .order_by(distance_col)
+        .limit(1)
+        .first()
+    )
+
+    if result is None:
         raise HTTPException(
             status_code=404,
             detail="Aucun embedding trouvé pour ce module"
         )
 
-    # ── Étape 7 : Compare les embeddings ──────────────────────
-    best_match_user_id = None
-    best_score = 0.0
-
-    for stored in stored_embeddings:
-        stored_vector = np.array(stored.embedding)
-        is_same, score = face_engine.is_same_person(
-            embedding_from_camera,
-            stored_vector
-        )
-        if score > best_score:
-            best_score = score
-            if is_same:
-                best_match_user_id = stored.user_id
+    best_match_user_id, distance = result
+    # pgvector renvoie une distance cosinus = 1 - similarité
+    best_score = 1.0 - float(distance)
 
     # ── Étape 8 : Vérifie le résultat ─────────────────────────
-    if best_match_user_id is None:
+    if best_score < SIMILARITY_THRESHOLD:
         raise HTTPException(
             status_code=401,
             detail=f"Visage non reconnu (score: {best_score:.3f})"

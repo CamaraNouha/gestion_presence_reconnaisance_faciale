@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'core/theme/app_theme.dart';
 import 'core/services/api_service.dart';
 import 'core/services/fcm_service.dart';
+import 'core/services/navigation_service.dart';
 import 'core/constants/app_constants.dart';
 import 'features/auth/splash_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -60,6 +61,7 @@ class ENIADApp extends StatelessWidget {
     return MaterialApp(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
+      navigatorKey: NavigationService.navigatorKey,
       theme: AppTheme.theme,
       home: const SplashScreen(),
     );

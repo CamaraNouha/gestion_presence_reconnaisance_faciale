@@ -15,6 +15,9 @@ def get_current_user(
     token = credentials.credentials
     try:
         payload = decode_token(token)
+        # Un refresh token ne doit pas servir à accéder aux ressources
+        if payload.get("type") == "refresh":
+            raise HTTPException(status_code=401, detail="Token invalide")
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Token invalide")

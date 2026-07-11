@@ -10,6 +10,7 @@
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'fcm_service.dart';
+import 'api_service.dart';
 
 class StorageService {
   StorageService._();
@@ -19,6 +20,7 @@ class StorageService {
 
   // ── Clés de stockage ──────────────────────────────────────
   static const _keyToken = 'access_token';
+  static const _keyRefreshToken = 'refresh_token';
   static const _keyUserId = 'user_id';
   static const _keyRole = 'user_role';
   static const _keyNom = 'user_nom';
@@ -32,6 +34,7 @@ class StorageService {
 
   static Future<void> saveAuthData({
     required String token,
+    required String refreshToken,
     required String userId,
     required String role,
     required String nom,
@@ -40,6 +43,7 @@ class StorageService {
     String? apogee,
   }) async {
     await _storage.write(key: _keyToken, value: token);
+    await _storage.write(key: _keyRefreshToken, value: refreshToken);
     await _storage.write(key: _keyUserId, value: userId);
     await _storage.write(key: _keyRole, value: role);
     await _storage.write(key: _keyNom, value: nom);
@@ -54,6 +58,19 @@ class StorageService {
 
   static Future<String?> getToken() async {
     return await _storage.read(key: _keyToken);
+  }
+
+  static Future<String?> getRefreshToken() async {
+    return await _storage.read(key: _keyRefreshToken);
+  }
+
+  // Met à jour uniquement les tokens (après un /auth/refresh)
+  static Future<void> updateTokens({
+    required String token,
+    required String refreshToken,
+  }) async {
+    await _storage.write(key: _keyToken, value: token);
+    await _storage.write(key: _keyRefreshToken, value: refreshToken);
   }
 
   static Future<String?> getUserId() async {
@@ -125,6 +142,14 @@ class StorageService {
   // ============================================================
 
   static Future<void> clearAll() async {
+    // Révoque le refresh token côté serveur (best-effort)
+    // AVANT d'effacer le stockage local.
+    try {
+      await ApiService.logout();
+    } catch (e) {
+      print('Erreur logout serveur: $e');
+    }
+
     await _storage.deleteAll();
 
     // Désabonne de tous les topics FCM

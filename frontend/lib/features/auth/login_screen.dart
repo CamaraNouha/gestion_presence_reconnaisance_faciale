@@ -56,10 +56,12 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       final token = response['access_token'] as String;
+      final refreshToken = response['refresh_token'] as String;
       final user = response['user'] as Map<String, dynamic>;
 
       await StorageService.saveAuthData(
         token: token,
+        refreshToken: refreshToken,
         userId: user['id'] ?? '',
         role: user['role'] ?? '',
         nom: user['nom'] ?? '',
