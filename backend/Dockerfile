@@ -20,5 +20,8 @@ COPY . .
 
 EXPOSE 8000
 
-# Lance les migrations puis démarre FastAPI
-CMD ["sh", "-c", "python init_db.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Lance les migrations puis démarre FastAPI.
+# --workers 4 : 4 process = 4 moteurs faciaux en parallèle
+# (les modèles OpenCV sont sérialisés par un verrou dans chaque
+# process — voir face_engine.py)
+CMD ["sh", "-c", "python init_db.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"]

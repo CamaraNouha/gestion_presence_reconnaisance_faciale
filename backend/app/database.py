@@ -16,7 +16,16 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg2://eniad_user:eniad_pass@127.0.0.1:5433/eniad_db"
 )
 
-engine = create_engine(DATABASE_URL)
+# Pool dimensionné pour la charge (100 étudiants simultanés) :
+# les valeurs par défaut (5+10) provoquent des TimeoutError sous
+# charge. 10+10 par worker × 4 workers = 80 connexions max,
+# sous la limite PostgreSQL (100).
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=10,
+    max_overflow=10,
+    pool_timeout=60,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
