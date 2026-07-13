@@ -589,14 +589,14 @@ class ApiService {
 
   static Future<Map<String, dynamic>> checkin({
     required String sessionId,
-    required String frameBase64,
+    required List<String> framesBase64,
     required double latitude,
     required double longitude,
   }) async {
     try {
       final response = await _dio.post('/checkin/', data: {
         'session_id': sessionId,
-        'frame_base64': frameBase64,
+        'frames_base64': framesBase64,
         'latitude': latitude,
         'longitude': longitude,
       });

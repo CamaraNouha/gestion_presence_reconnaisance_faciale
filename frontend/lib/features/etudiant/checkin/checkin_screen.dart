@@ -170,23 +170,28 @@ class _CheckinScreenState extends State<CheckinScreen> {
 
     setState(() {
       _processing = true;
-      _statusMessage = 'Capture en cours...';
+      _statusMessage = 'Vérification en cours...\nClignez des yeux';
     });
 
     try {
-      // 1. Capture de la photo
-      final image = await _camera!.takePicture();
+      // 1. Capture d'une rafale de 5 photos (~2,5 s) pour la
+      //    détection de clignement côté backend
+      final frames = <String>[];
+      for (var i = 0; i < 5; i++) {
+        final image = await _camera!.takePicture();
+        final bytes = await File(image.path).readAsBytes();
+        frames.add(base64Encode(bytes));
+        if (i < 4) {
+          await Future.delayed(const Duration(milliseconds: 350));
+        }
+      }
 
       setState(() => _statusMessage = 'Vérification du visage...');
 
-      // 2. Lecture en bytes + conversion base64
-      final bytes = await File(image.path).readAsBytes();
-      final base64Image = base64Encode(bytes);
-
-      // 3. Envoi au backend
+      // 2. Envoi au backend
       final result = await ApiService.checkin(
         sessionId: widget.sessionId,
-        frameBase64: base64Image,
+        framesBase64: frames,
         latitude: _latitude!,
         longitude: _longitude!,
       );

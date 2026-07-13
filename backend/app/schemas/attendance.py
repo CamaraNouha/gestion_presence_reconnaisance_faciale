@@ -23,4 +23,7 @@ class CheckinRequest(BaseModel):
     session_id: UUID
     latitude: float | None = None
     longitude: float | None = None
-    frame_base64: str
+    # Rafale d'images (≥3) pour la détection de clignement.
+    frames_base64: list[str] | None = None
+    # Ancien champ image unique (conservé pour compatibilité)
+    frame_base64: str | None = None

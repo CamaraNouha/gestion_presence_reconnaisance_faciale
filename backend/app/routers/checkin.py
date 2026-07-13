@@ -26,7 +26,9 @@ from app.models.face_embedding import FaceEmbedding
 from app.models.other import UserModule
 from app.schemas.attendance import CheckinRequest
 from app.core.dependencies import get_current_user
-from app.cv.face_engine import face_engine, SIMILARITY_THRESHOLD
+from app.cv.face_engine import (
+    face_engine, SIMILARITY_THRESHOLD, LIVENESS_THRESHOLD, BLINK_THRESHOLD,
+)
 
 router = APIRouter(prefix="/checkin", tags=["Pointage"])
 
@@ -154,16 +156,73 @@ def checkin(
                        f"Rayon autorisé : {RAYON_MAX_METRES:.0f}m"
             )
 
-    # ── Étape 5 : Reconnaissance faciale ─────────────────────
-    embedding_from_camera = face_engine.get_embedding_from_base64(
-        request.frame_base64
+    # ── Étape 5 : Détection du visage (rafale d'images) ───────
+    frames_b64 = request.frames_base64 or (
+        [request.frame_base64] if request.frame_base64 else []
     )
-
-    if embedding_from_camera is None:
+    if len(frames_b64) < 3:
         raise HTTPException(
             status_code=400,
-            detail="Aucun visage détecté — placez votre visage face à la caméra"
+            detail="Rafale d'images insuffisante — mettez à jour "
+                   "l'application"
         )
+
+    frames_faces = []
+    for fb64 in frames_b64:
+        image = face_engine.decode_base64_image(fb64)
+        if image is None:
+            continue
+        face = face_engine.detect_face(image)
+        if face is None:
+            continue
+        frames_faces.append((image, face))
+
+    if len(frames_faces) < 3:
+        raise HTTPException(
+            status_code=400,
+            detail="Visage non détecté — restez face à la caméra "
+                   "pendant la vérification"
+        )
+
+    # ── Étape 5-bis : Anti-spoofing (vivacité) ────────────────
+    # Ensemble MiniFASNet sur chaque image, score médian (robuste
+    # aux images floues). Rejette photos imprimées et écrans.
+    live_scores = sorted(
+        face_engine.check_liveness(img, f)[1] for img, f in frames_faces
+    )
+    live_score = live_scores[len(live_scores) // 2]
+    is_real = live_score >= LIVENESS_THRESHOLD
+
+    # ── Étape 5-ter : Détection de clignement ─────────────────
+    # Une photo (même parfaite) ne cligne jamais des yeux.
+    blinked, blink_score = face_engine.check_blink(frames_faces)
+
+    # Log de calibration : visible dans `docker logs eniad_api`
+    print(
+        f"[LIVENESS] user={current_user.apogee} "
+        f"score={live_score:.4f} seuil={LIVENESS_THRESHOLD} "
+        f"blink={blink_score:.2f} seuil_blink={BLINK_THRESHOLD} "
+        f"resultat={'ACCEPTE' if (is_real and blinked) else 'REJETE'}"
+    )
+
+    if not is_real:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Visage non vivant détecté — présentez votre vrai "
+                   f"visage. (score vivacité: {live_score:.2f})"
+        )
+
+    if not blinked:
+        raise HTTPException(
+            status_code=403,
+            detail="Aucun clignement détecté — refaites le pointage "
+                   "en clignant naturellement des yeux"
+        )
+
+    # ── Étape 5-quater : Extraction de l'embedding ────────────
+    # Utilise l'image du milieu de la rafale
+    image, face = frames_faces[len(frames_faces) // 2]
+    embedding_from_camera = face_engine.get_embedding_for_face(image, face)
 
     # ── Étape 6 : Récupère les étudiants inscrits au module ───
     inscriptions = db.query(UserModule).filter(
@@ -233,5 +292,7 @@ def checkin(
         "statut": "present",
         "message": "Présence enregistrée avec succès",
         "score_facial": round(best_score, 4),
+        "score_vivacite": round(live_score, 4),
+        "score_clignement": round(blink_score, 2),
         "pointed_at": datetime.utcnow().isoformat()
     }
